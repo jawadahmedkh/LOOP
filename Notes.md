@@ -484,6 +484,18 @@ path('delete-recipe/<id>/',delete_recipe, name='Delete Recipe')
 <a href="/delete-recipe/{{r.id}}" class="btn btn-danger"> Delete </a>
 ```
 
+## For seeting Automatic url in html files with Django
+
+```html
+<a href="{% url 'url_name_you_have_given_while_setting_up_path'%}" class="btn btn-danger"> Delete </a>
+```
+
+## For seeting Automatic url in html files with Django (with parameter)
+
+```html
+<a href="{% url 'See Marks' student.student_id %}" class="btn btn-danger"> Delete </a>
+```
+
 ---
 
 ## Search Method
@@ -720,6 +732,188 @@ Recipe.objects.filter(variable_name__iregex=r'abc$')  # Case-insensitive regex
 Recipe.objects.filter(date_field__year=2025)
 Recipe.objects.filter(date_field__month=6)
 Recipe.objects.filter(date_field__day=9)
+```
+
+---
+
+## Accessing Foreign Key Fields
+
+When you have a foreign key relationship, you can access related fields using the double underscore `__`.
+
+```python
+Student.objects.filter(department__department  = 'Civil') 
+# Here department is foreign key in Student model and department is field in Department model
+```
+
+### Using `__` Fucntion with Foreign Key
+
+```python
+Student.objects.filter(department__department__icontains  = 'Civil')
+```
+
+---
+
+## Seeing All fields of a record using django (Dict)
+
+```python
+Student.objects.filter(student_name__icontains = 'abi').values()
+## -----------------------------------------OUTPUT ----------------------------------------------
+<QuerySet [{'id': 57, 'department_id': 4, 'student_id_id': 60, 'student_name': 'Tabitha Gutierrez', 'student_age': 44, 'student_email': 'odixon@example.net', 'student_address': '0093 Brittany Port Suite 919\nLake Jacobville, MN 62388'}]>
+# Or we can go with specific values
+Student.objects.filter(student_name__icontains = 'abi').values('student_name','student_age')
+## ---------------------------------------OUTPUT------------------------------------------------
+<QuerySet [{'student_name': 'Tabitha Gutierrez', 'student_age': 44}]>
+```
+
+---
+
+## Reversing QuerSet
+
+```python
+# Reversing the order of a QuerySet
+Student.objects.filter(student_name__icontains = 'abi').order_by('student_name').reverse()
+# OR
+Student.objects.filter(student_name__icontains = 'abi').order_by('student_name')[::-1]
+```
+
+---
+
+## Values List
+
+The only difference betwwen `values()` and `values_list()` is that `values()` returns `dict` while `values_list()` returns a list of all values
+
+```python
+# Getting a list of values for a specific field
+Student.objects.filter(student_name__icontains = 'abi').values_list('student_name', flat=True)
+# OR
+Student.objects.filter(student_name__icontains = 'abi').values_list('student_name')
+# ---------------------------------------OUTPUT------------------------------------------------
+<QuerySet ['Tabitha Gutierrez']>
+# OR
+Student.objects.filter(student_name__icontains = 'abi').values_list('student_name', 'student_age')
+# ---------------------------------------OUTPUT------------------------------------------------
+<QuerySet [('Tabitha Gutierrez', 44)]>
+```
+
+---
+
+## Aggregate in Django
+
+* It works only one column at a time
+* Operations on a single column like `SUM`, `AVG`, `COUNT`, `MAX`, `MIN`
+* It returns a dictonary
+
+```python
+from django.db.models import Count, Sum, Avg, Max, Min
+
+Student.objects.aggregate(Avg('student_age')) # Average Age
+Student.objects.aggregate(Min('student_age')) # Minimum Age
+Student.objects.aggregate(Max('student_age')) # Maximum Age
+Student.objects.aggregate(Sum('student_age')) # Sum of the Ages
+
+```
+
+---
+
+## Annotate in Django
+
+In general we see the count of each one like how much peoples are there of age 20 and etc...
+
+```python
+Student.objects.values('student_age').annotate(Count('student_age'))
+Student.objects.values('department__department').annotate(Count('department__department'))
+Student.objects.values('department').annotate(Count('department'))
+
+# With two counts
+Student.objects.values('department', 'student_age').annotate(Count('department'), Count('student_age'))
+```
+
+---
+
+## unique_together
+
+It ensures a combination of fields must be unique (i.e., no two model instances can have the same values for all specified fields).
+
+* Prevent duplicate entries (e.g., a book can’t have the same title and author).
+* Composite unique constraints (instead of unique=True on a single field).
+
+```python
+unique_together = ['student','subject']
+```
+
+---
+
+## Admin Site Customization
+
+### Customizing Admin Interface
+
+To customize how models appear in the Django admin interface, you can create a custom admin class.
+
+```python
+from django.contrib import admin
+from .models import Student
+class StudentMarksAdmin(admin.ModelAdmin):
+    list_display = ['student','subject','marks']
+
+admin.site.register(Subject_Marks,StudentMarksAdmin) # Registering a new interface of given Table i.e. Student_Marks
+```
+
+----
+
+## Pagination
+
+Pagination is used to split large datasets into smaller, manageable chunks.
+
+### Basic Pagination Example
+
+```python
+from django.core.paginator import Paginator
+def get_student(request):
+    queryset = Student.objects.all()
+    paginator = Paginator(queryset,20)
+    page_number = request.GET.get('page',1)
+    page_obj = paginator.get_page(page_number)
+
+    return render(request,'students.html',context={'page':'Get Students', 'student':page_obj})
+```
+
+### Template Example
+
+```html
+<!-- Paginator  -->
+<div class="pagination">
+    <span class="step-links">
+        {% if student.has_previous %}
+            <a href="?page=1">&laquo; first</a>
+            <a href="?page={{ student.previous_page_number }}">previous</a>
+        {% endif %}
+
+        <span class="current">
+            Page {{ student.number }} of {{ student.paginator.num_pages }}.
+        </span>
+
+        {% if student.has_next %}
+            <a href="?page={{ student.next_page_number }}">next</a>
+            <a href="?page={{ student.paginator.num_pages }}">last &raquo;</a>
+        {% endif %}
+    </span>
+</div>
+```
+
+---
+
+## Q in Django
+
+Q objects allow you to build complex queries using logical operators like AND, OR, and NOT.
+
+```python
+from django.db.models import Q
+
+f request.GET.get('search'):
+        word  = request.GET.get('search')
+        queryset = Student.objects.filter( Q(student_name__icontains = word) | Q(department__department__icontains = word))
+
+# This will filter students whose name or department contains the search word
 ```
 
 ---
