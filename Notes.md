@@ -1716,5 +1716,4 @@ for row in results:
 ```
 
 ---
-## Cretinga 
                               **That's IT**
