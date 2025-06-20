@@ -446,7 +446,7 @@ STATIC_ROOT = os.path.join(BASE_DIR,'staticfiles')
 
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'public/static')]
 
-MEDIA_ROOT = os.path.join(BASE_DIR,'public/static')
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 MEDIA_URL = '/media/'
 ```
 
@@ -918,4 +918,803 @@ f request.GET.get('search'):
 
 ---
 
-## f
+## Custom User Model
+
+To create a custom user model in Django, you need to define a new model that inherits from `AbstractBaseUser` and `PermissionsMixin`. This allows you to customize the user model while still retaining the built-in authentication features.
+
+### Custom User Model with AbstractBaseUser
+
+When we have to create a custom user model, from scratch, then we use it.
+
+### Setting up django to login with your own chocie of field
+
+Set `USERNAME_FIELD` in your custom user model to the field you want to use for authentication (e.g., email).
+
+```python
+USERNAME_FIELD = ['phone_number']
+```
+
+### Step 1: Create a Custom User Model
+
+```python
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.db import models
+
+class CustomUser(AbstractUser):
+    username = None
+    email = models.EmailField(unique=True)
+    phone_number = models.CharField(max_length=100,unique=True)
+    user_bio = models.CharField(max_length=50)
+    profile_image = models.ImageField(upload_to='profile/')
+
+    USERNAME_FIELD = 'phone_number'
+    REQUIRED_FIELDS = []
+```
+
+We must have to create a `createsuperuser()` method for our custom user model to create a superuser.
+
+### Step 2: Create a Custom User Manager
+
+```python
+from django.contrib.auth.models import BaseUserManager
+
+class UserManager(BaseUserManager):
+
+    def create_user(self, phone_number, password=None, **extra_fields):
+        if not phone_number:
+            raise ValueError('Phone number is required')
+
+        # Only normalize email if it exists
+        email = extra_fields.get('email')
+        if email:
+            extra_fields['email'] = self.normalize_email(email)
+
+        user = self.model(phone_number=phone_number, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+
+        return user
+
+    def create_superuser(self, phone_number, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
+
+        return self.create_user(phone_number, password, **extra_fields)
+```
+
+### Step 3: Tell Django that we have created a custom user model
+
+* Now after creating custom user model and cutomer user model manager we have to tell django that we have created a cutom user model
+
+* So go to `settings.py` add following lines in it:
+
+* `AUTH_USER_MODEL = 'app_name.CustomUser'`
+
+* Now delete all migrations & Database and start from scratch i.e. Run all migrations again.
+
+### Step 4: Run migrations command
+
+`python manage.py makemigratins`
+`python manage.py migrate`
+
+After you have created a custom user model, now you have to import User model with `get_user_model()` method.
+
+```python
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+```
+
+---
+
+## Slug Fields in Django
+
+* A slug is a short label used to identify a particular resource in a URL-friendly way. It typically consists of letters, numbers, underscores, or hyphens.
+* Slugs are often used in URLs to make them more readable and SEO-friendly.
+* For example, a blog post titled "Django Tutorial" might have a slug like "django-tutorial", resulting in a URL like `https://example.com/blog/django-tutorial/`.
+* Slugs are useful for creating clean, user-friendly URLs that are easy to read and remember.
+* In Django, you can create a slug field in your model to automatically generate slugs based on another field (like the title of a blog post) or to allow manual input of slugs.
+* Slugs can be used in URL patterns to retrieve specific objects from the database, making it easier to create dynamic and user-friendly URLs.
+* Slugs are typically unique within a model, ensuring that each URL corresponds to a specific resource without conflicts.
+* Slugs can be generated automatically using Django's `slugify` function, which converts a string into a slug by removing special characters and converting spaces to hyphens.
+* Slugs can also be manually set by users, allowing for customization of URLs while still maintaining a consistent format.
+
+### Creating a Slug Field
+
+To create a slug field in your model, you can use the `SlugField` provided by Django.
+
+```python
+from django.db import models
+from django.utils.text import slugify
+
+class BlogPost(models.Model):
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(unique=True, blank=True)
+    content = models.TextField()
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.title)
+        super().save(*args, **kwargs)
+```
+
+---
+
+## How to work without deleting a data in database
+
+If you want to work with data without deleting it from the database, you can use a **soft delete** approach. This involves adding a field to your model to indicate whether the record is active or deleted, rather than actually removing it from the database.
+
+Soft delete means, we don't actually delete the data from database, actually we write a flag for it `is_deleted`,Now if we have to delete some data, we mark `is_deleted = True` for that data and we are taking data from the database we filter only those who are marked with `is_deleted = False`. That's It.
+
+### Example of Soft Delete
+
+```python
+from django.db import models
+
+class MyModel(models.Model):
+    name = models.CharField(max_length=100)
+    is_deleted = models.BooleanField(default=False) #this is a field we use for soft delete
+
+    def delete(self, *args, **kwargs):
+        self.is_deleted = True
+        self.save()
+
+```
+
+### Querying Active Records
+
+When querying the database, you can filter out the soft-deleted records:
+
+```python
+active_records = MyModel.objects.filter(is_deleted=False)
+```
+
+## Problems
+
+Butt here using this method we have to write `is_deleted = False` every time we query the database, so to avoid this we can use a custom manager.
+
+```python
+from django.db import models
+
+class RecipeManager(models.Manager):
+
+    def get_queryset(self) -> models.QuerySet:
+        return super().get_queryset().filter(is_deleted = False)
+
+```
+
+Now we have to set a line before creating a model:
+
+```python
+
+# Go to model for which we are building a ModelManager and following lines
+
+objects = RecipeManager() # Add your manager name instead of RecipeManager()
+admin_objects = models.Manager() # We have also given a custom name to model manager for calling it in queireis like Recipes.admin_objects.all() will return all records including deleted ones
+```
+
+---
+
+## ✅ Custom User Model Using `AbstractUser` (Recommended Approach)
+
+### 📁 File: `accounts/models.py`
+
+```python
+from django.contrib.auth.models import AbstractUser
+from django.db import models
+from django.utils import timezone
+
+# ✅ Custom User model inheriting from AbstractUser
+class CustomUser(AbstractUser):
+    full_name = models.CharField(max_length=255, blank=True)
+    date_joined = models.DateTimeField(default=timezone.now)
+    is_deleted = models.BooleanField(default=False)  # Optional for soft deletion
+
+    def __str__(self):
+        return self.username  # Or self.email if email is your username
+```
+
+---
+
+### File: `accounts/manager.py`
+
+```python
+from django.contrib.auth.models import BaseUserManager
+
+class UserManager(BaseUserManager):
+
+    def create_user(self, phone_number, password=None, **extra_fields):
+        if not phone_number:
+            raise ValueError('Phone number is required')
+
+        # Only normalize email if it exists
+        email = extra_fields.get('email')
+        if email:
+            extra_fields['email'] = self.normalize_email(email)
+
+        user = self.model(phone_number=phone_number, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+
+        return user
+
+    def create_superuser(self, phone_number, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
+
+        return self.create_user(phone_number, password, **extra_fields)
+```
+
+### 📁 File: `accounts/admin.py`
+
+```python
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from .models import CustomUser
+
+# ✅ Customizing admin panel for the CustomUser model
+class CustomUserAdmin(UserAdmin):
+    model = CustomUser
+    list_display = ['username', 'email', 'full_name', 'is_staff', 'is_superuser']
+    fieldsets = UserAdmin.fieldsets + (
+        (None, {'fields': ('full_name', 'is_deleted')}),
+    )
+
+admin.site.register(CustomUser, CustomUserAdmin)
+```
+
+---
+
+### 📁 File: `settings.py` (add this at top-level)
+
+```python
+# ✅ Tell Django to use your custom user model
+AUTH_USER_MODEL = 'accounts.CustomUser'
+```
+
+---
+
+### 📁 File: Anywhere you use a ForeignKey to user
+
+Instead of:
+
+```python
+from django.contrib.auth.models import User
+user = models.ForeignKey(User, ...)
+```
+
+Use:
+
+```python
+from django.conf import settings
+user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+```
+
+This ensures compatibility with any future user model.
+
+---
+
+### ✅ How to Use in Forms or Views
+
+#### For forms or business logic
+
+```python
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+```
+
+---
+
+### 🔁 Run Migrations
+
+Do this **before** you create any other models that refer to the user:
+
+```bash
+python manage.py makemigrations accounts
+python manage.py migrate
+```
+
+---
+
+### 🧑‍💼 Create Superuser
+
+```bash
+python manage.py createsuperuser
+```
+
+You'll be prompted for username, email, and password.
+
+---
+
+## 🧠 Notes
+
+| Feature             | Value                                                                |
+| ------------------- | -------------------------------------------------------------------- |
+| Base Class          | `AbstractUser` (inherits all useful fields like `username`, `email`) |
+| Field Added         | `full_name`, `is_deleted`                                            |
+| Admin Panel         | Fully functional with custom fields                                  |
+| Username Field      | Still `username` (easier setup than using email as login)            |
+| Use in Models/Views | Always via `settings.AUTH_USER_MODEL` or `get_user_model()`          |
+
+---
+
+## Custom User Using `AbstractBaseUser` and `PermissionsMixin`
+
+> 🧠 Use this if you want to replace Django’s default `username` login with email-based login or add deep custom behavior.
+
+---
+
+### 📁 File: `accounts/models.py`
+
+```python
+from django.db import models
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.utils import timezone
+
+# ✅ STEP 1: Custom User Manager
+class CustomUserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError("Email is required")
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)  # Encrypt the password
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+
+        if not extra_fields.get('is_staff'):
+            raise ValueError('Superuser must have is_staff=True.')
+        if not extra_fields.get('is_superuser'):
+            raise ValueError('Superuser must have is_superuser=True.')
+
+        return self.create_user(email, password, **extra_fields)
+
+
+# ✅ STEP 2: Custom User Model
+class CustomUser(AbstractBaseUser, PermissionsMixin):
+    email = models.EmailField(unique=True)
+    full_name = models.CharField(max_length=255)
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(default=timezone.now)
+
+    USERNAME_FIELD = 'email'         # Use email to log in
+    REQUIRED_FIELDS = ['full_name']  # Prompt for this when creating a superuser
+
+    objects = CustomUserManager()    # Attach the custom manager
+
+    def __str__(self):
+        return self.email
+```
+
+---
+
+### 📁 File: `accounts/admin.py`
+
+```python
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from django.utils.translation import gettext_lazy as _
+from .models import CustomUser
+
+# ✅ Customize admin interface for CustomUser
+class CustomUserAdmin(UserAdmin):
+    model = CustomUser
+    list_display = ('email', 'full_name', 'is_staff', 'is_superuser')
+    search_fields = ('email', 'full_name')
+    ordering = ('email',)
+
+    fieldsets = (
+        (None, {'fields': ('email', 'password')}),
+        (_('Personal info'), {'fields': ('full_name',)}),
+        (_('Permissions'), {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
+    )
+
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('email', 'full_name', 'password1', 'password2', 'is_staff', 'is_active')}
+        ),
+    )
+
+admin.site.register(CustomUser, CustomUserAdmin)
+```
+
+---
+
+### 📁 File: `settings.py`
+
+```python
+AUTH_USER_MODEL = 'accounts.CustomUser'
+```
+
+---
+
+### 📁 Update All `ForeignKey` Usage to User
+
+Anywhere in models:
+
+```python
+from django.conf import settings
+user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+```
+
+---
+
+### 🧪 Run Migrations
+
+If this is your first time creating the project:
+
+```bash
+python manage.py makemigrations accounts
+python manage.py migrate
+```
+
+If you've already run migrations **before setting** `AUTH_USER_MODEL`, let me know — **you must reset the database** to avoid migration conflicts.
+
+---
+
+### 🧑‍💼 Create a Superuser
+
+```bash
+python manage.py createsuperuser
+# You will be asked for: email, full name, and password
+```
+
+---
+
+### ✅ Use in Views and Forms
+
+```python
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+# Example usage
+user = User.objects.get(email="someone@example.com")
+```
+
+---
+
+## 🧠 Summary Table
+
+| Component           | Description                                           |
+| ------------------- | ----------------------------------------------------- |
+| `AbstractBaseUser`  | Base user class without username or permissions       |
+| `PermissionsMixin`  | Adds `is_superuser`, `groups`, and `user_permissions` |
+| `CustomUserManager` | Handles `create_user()` and `create_superuser()`      |
+| `AUTH_USER_MODEL`   | Set to `'accounts.CustomUser'` in `settings.py`       |
+| Admin Panel         | Fully customized admin registration                   |
+| Login With          | `email` (not username)                                |
+
+---
+
+## How to send and Email in Django
+
+To configure **email in Django**, you need to update the settings so Django can use an SMTP server to send emails (e.g. for user registration, password reset, contact forms, etc.).
+
+### 1. Add Email Configuration in `settings.py`
+
+#### Example: Gmail SMTP (Recommended for Development)
+
+```python
+# settings.py
+
+# Enable Django to send emails
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+# Your email host credentials
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'youremail@gmail.com'       # Replace with your email
+EMAIL_HOST_PASSWORD = 'yourapppassword'       # Not your email password (see below)
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+```
+
+### 2. App Password (if using Gmail)
+
+Google **does not allow** logging in with your Gmail password directly.
+
+Instead:
+
+#### Steps to Get App Password
+
+1. Go to [https://myaccount.google.com/security](https://myaccount.google.com/security)
+2. Enable **2-Step Verification**
+3. Then go to **App Passwords**
+4. Select app: "Mail" → Device: "Other" → Name it like "Django"
+5. Copy the 16-character app password and paste it into `EMAIL_HOST_PASSWORD`
+
+### 3. Test Email Sending (Optional)
+
+Create a test view or use Django shell:
+
+```python
+from django.core.mail import send_mail
+
+send_mail(
+    subject='Test Email',
+    message='This is a test email from Django.',
+    from_email='youremail@gmail.com',
+    recipient_list=['target@example.com'],
+    fail_silently=False,
+)
+```
+
+### 4. Alternative for Development (No SMTP Needed)
+
+Use **console backend** during development to print emails to the terminal:
+
+```python
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+```
+
+No email is sent, but it shows what would have been sent.
+
+### Other Common SMTP Providers
+
+| Provider | Hostname            | Port | TLS/SSL | Note                      |
+| -------- | ------------------- | ---- | ------- | ------------------------- |
+| Gmail    | smtp.gmail.com      | 587  | TLS     | Requires app password     |
+| Outlook  | smtp.office365.com  | 587  | TLS     | Use Outlook credentials   |
+| Yahoo    | smtp.mail.yahoo.com | 587  | TLS     | Also needs app password   |
+| Zoho     | smtp.zoho.com       | 587  | TLS     | For business use          |
+| Mailtrap | smtp.mailtrap.io    | 2525 | TLS     | Dev email testing service |
+
+---
+
+## Password Reset Functionality in Django
+
+Django has **built-in views** for password reset that handle everything automatically.
+
+### Add These URLs to `urls.py`
+
+```python
+from django.contrib.auth import views as auth_views
+from django.urls import path
+
+urlpatterns = [
+    # Password reset flow
+    path('password-reset/', auth_views.PasswordResetView.as_view(), name='password_reset'),
+    path('password-reset/done/', auth_views.PasswordResetDoneView.as_view(), name='password_reset_done'),
+    path('reset/<uidb64>/<token>/', auth_views.PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+    path('reset/done/', auth_views.PasswordResetCompleteView.as_view(), name='password_reset_complete'),
+]
+```
+
+### Required Templates (Create these HTML files)
+
+Inside `templates/registration/` directory:
+
+* `password_reset_form.html` – email input form
+* `password_reset_done.html` – confirmation email sent
+* `password_reset_confirm.html` – new password form
+* `password_reset_complete.html` – success page
+
+You can copy and customize Django’s default templates:
+[https://github.com/django/django/tree/main/django/contrib/admin/templates/registration](https://github.com/django/django/tree/main/django/contrib/admin/templates/registration)
+
+### Email Settings (in `settings.py`)
+
+Make sure your email settings are configured as shown in previous message.
+
+You can also customize email content:
+
+```python
+PASSWORD_RESET_EMAIL_TEMPLATE_NAME = 'emails/password_reset_email.html'
+```
+
+Then create that template to style the email.
+
+---
+
+## Email Verification (After Registration) in Django
+
+Django doesn’t do this by default, so we build it manually.
+
+### Generate Email Verification Token
+
+In your `utils.py` or `views.py`:
+
+```python
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.core.mail import send_mail
+from django.urls import reverse
+
+def send_verification_email(request, user):
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    link = request.build_absolute_uri(
+        reverse('verify_email', kwargs={'uidb64': uid, 'token': token})
+    )
+    subject = 'Verify your email address'
+    message = f'Click the link to verify: {link}'
+    send_mail(subject, message, 'noreply@example.com', [user.email])
+```
+
+### Add Verify URL
+
+```python
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_decode
+from django.contrib.auth import get_user_model
+from django.shortcuts import redirect
+from django.urls import path
+
+User = get_user_model()
+
+def verify_email(request, uidb64, token):
+    try:
+        uid = urlsafe_base64_decode(uidb64).decode()
+        user = User.objects.get(pk=uid)
+    except:
+        user = None
+
+    if user and default_token_generator.check_token(user, token):
+        user.is_active = True
+        user.save()
+        return redirect('login')  # or success page
+    else:
+        return redirect('error_page')  # invalid token
+
+urlpatterns += [
+    path('verify-email/<uidb64>/<token>/', verify_email, name='verify_email'),
+]
+```
+
+### In Registration View
+
+When creating a user, set them as inactive and send verification email:
+
+```python
+user = CustomUser.objects.create_user(email=email, password=password, full_name=name, is_active=False)
+send_verification_email(request, user)
+```
+
+---
+
+## 📩 Final Notes
+
+| Task                 | Use Django Built-in? | Email Needed? |
+| -------------------- | -------------------- | ------------- |
+| Password Reset       | ✅ Yes                | ✅ Required    |
+| Email Verification   | ❌ Manual (above)     | ✅ Required    |
+| Welcome/Custom Email | ❌ Manual             | ✅ Optional    |
+
+---
+
+## Django Signals
+
+There are four types of signals in Django:
+
+1. **Pre-Save Signal**: Triggered before a model instance is saved.
+2. **Post-Save Signal**: Triggered after a model instance is saved.
+3. **Pre-Delete Signal**: Triggered before a model instance is deleted.
+4. **Post-Delete Signal**: Triggered after a model instance is deleted.
+
+### Example of Using Signals
+
+```python
+from django.db.models.signals import post_save, pre_delete
+from django.dispatch import receiver
+from django.contrib.auth.models import User
+
+@receiver(post_save, sender=User) # Here we have to give the method you are using as a sender and sender is a Class or model for which are you using these signals.
+
+def user_created(sender, instance, created, **kwargs):
+    if created:
+        print(f'User {instance.username} has been created.')
+
+@receiver(pre_delete, sender=User)
+def user_deleted(sender, instance, **kwargs): # This is a custom method, we made it by ourselves.
+    print(f'User {instance.username} is about to be deleted.') # The message which we have to display when the user is deleted.
+```
+
+### How to Use Signals
+
+To use signals, you need to import the signal you want to use and the receiver function. The receiver function is decorated with `@receiver` and takes the sender model as an argument.
+
+Signals are mostly used for:
+
+* **Logging**: Track when records are created, updated, or deleted.
+* **Notifications**: Send emails or messages when certain actions occur.
+* **Data Integrity**: Validate or modify data before saving or deleting.
+
+---
+
+## Sending Email with attachments in Django
+
+To send an email with attachments in Django, you can use the `EmailMessage` class from `django.core.mail`. Here’s how to do it:
+
+```python
+from django.core.mail import EmailMessage
+from django.conf import settings
+from django.core.files import File
+
+def send_email_with_attachment(subject, message, recipient_list, attachment_path):
+    # Create the email message
+    mail = EmailMessage(
+        subject=subject,
+        body=message,
+        from_email='jawadfarman786@gmail.com',
+        to=recipient_list,
+    )
+
+    with open('mail_sending.py', 'rb') as f:
+                file_data = f.read()
+                file_name = 'mail_sending.py'
+
+    mail.attach(file_name, file_data)  # mimetype for Python file
+
+    mail.send()
+
+```
+
+---
+
+## Boosting ORM Qeuries (Writing Raw SQL in Django)
+
+```python
+from django.db import connection
+def execute_raw_query(query, params=None):
+    with connection.cursor() as cursor:
+        cursor.execute(query, params or [])
+        return cursor.fetchall()
+
+# Example usage
+query = "SELECT * FROM myapp_mymodel WHERE age > %s"
+params = [30]
+results = execute_raw_query(query, params)
+# Process results
+for row in results:
+    print(row)
+```
+
+---
+
+## Adding Atomicity on DataBase Queries in Django
+
+```python
+
+from django.db import connection
+from django.db import transaction
+
+@transaction.atomic # It is a decorater that make sure all transactions must be run and vice versa.
+def execute_raw_query(query, params=None):
+    with connection.cursor() as cursor:
+        cursor.execute(query, params or [])
+        return cursor.fetchall()
+
+# Example usage
+query = "SELECT * FROM myapp_mymodel WHERE age > %s"
+params = [30]
+results = execute_raw_query(query, params)
+# Process results
+for row in results:
+    print(row)
+
+```
+
+---
+## Cretinga 
+                              **That's IT**
